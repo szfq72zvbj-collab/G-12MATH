@@ -137,9 +137,18 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
   };
 
+  const refreshProfile = async () => {
+    if (!currentUser) {
+      setProfile(null);
+      return null;
+    }
+    return loadProfile(currentUser);
+  };
+
   const value = {
     currentUser,
     profile,
+    refreshProfile,
     isAuthenticated: Boolean(currentUser),
     isAdmin: profile?.role === 'admin',
     login,
