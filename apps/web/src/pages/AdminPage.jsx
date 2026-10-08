@@ -29,7 +29,7 @@ const blank = {
 };
 
 const AdminPage = () => {
-  const { currentUser, profile, isAdmin, logout } = useAuth();
+  const { currentUser, profile, isAdmin, refreshProfile, logout } = useAuth();
   const [chapters, setChapters] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -40,6 +40,7 @@ const AdminPage = () => {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('questions');
   const [error, setError] = useState('');
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -63,7 +64,25 @@ const AdminPage = () => {
   };
 
   useEffect(() => {
-    if (isAdmin) load();
+    let mounted = true;
+
+    const verifyAdmin = async () => {
+      if (!currentUser) {
+        if (mounted) setCheckingAdmin(false);
+        return;
+      }
+
+      setCheckingAdmin(true);
+      await refreshProfile();
+      if (mounted) setCheckingAdmin(false);
+    };
+
+    void verifyAdmin();
+    return () => { mounted = false; };
+  }, [currentUser, refreshProfile]);
+
+  useEffect(() => {
+    if (isAdmin) void load();
   }, [isAdmin]);
 
   const chapterQuestions = useMemo(
@@ -79,6 +98,17 @@ const AdminPage = () => {
   };
 
   if (!currentUser) return <Navigate to="/login" replace />;
+
+  if (checkingAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+          <p className="text-muted-foreground">Checking administrator access…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
