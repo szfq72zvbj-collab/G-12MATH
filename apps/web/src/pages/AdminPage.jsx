@@ -80,17 +80,6 @@ const AdminPage = () => {
 
   if (!currentUser) return <Navigate to="/login" replace />;
 
-  if (checkingAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
-          <p className="text-muted-foreground">Checking administrator access…</p>
-        </div>
-      </div>
-    );
-  }
-
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
