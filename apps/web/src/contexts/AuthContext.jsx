@@ -19,6 +19,7 @@ export const AuthProvider = ({ children }) => {
       setProfile(null);
       return null;
     }
+
     const { data } = await supabase
       .from('profiles')
       .select('id, full_name, email, phone, role, last_seen')
@@ -27,9 +28,13 @@ export const AuthProvider = ({ children }) => {
 
     if (data) {
       setProfile(data);
-      await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
+      await supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', user.id);
       return data;
     }
+
     return null;
   };
 
@@ -39,10 +44,17 @@ export const AuthProvider = ({ children }) => {
     const initialize = async () => {
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
+
       const user = data.session?.user || null;
       setCurrentUser(user);
-      if (user) await loadProfile(user);
-      if (mounted) setInitialLoading(false);
+
+      if (user) {
+        await loadProfile(user);
+      }
+
+      if (mounted) {
+        setInitialLoading(false);
+      }
     };
 
     initialize();
@@ -51,6 +63,7 @@ export const AuthProvider = ({ children }) => {
       const user = session?.user || null;
       setCurrentUser(user);
       setInitialLoading(false);
+
       if (user) {
         void loadProfile(user);
       } else {
@@ -69,19 +82,22 @@ export const AuthProvider = ({ children }) => {
       email: email.trim(),
       password,
     });
+
     if (error) throw error;
+
     setCurrentUser(data.user);
     await loadProfile(data.user);
     return data;
   };
 
   const signup = async (name, email, phone, password) => {
-    const redirectTo = window.location.origin + window.location.pathname + '#/login';
+    // Do not pass a production redirect URL here. Supabase requires every
+    // emailRedirectTo value to be present in its configured redirect allow-list.
+    // Omitting it lets the hosted project use its configured Site URL.
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        emailRedirectTo: redirectTo,
         data: {
           full_name: name.trim(),
           phone: phone.trim(),
@@ -97,27 +113,34 @@ export const AuthProvider = ({ children }) => {
 
     return {
       ...data,
-      requiresVerification: !!data.user && !data.session,
+      requiresVerification: Boolean(data.user && !data.session),
     };
   };
 
   const logout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+
     setCurrentUser(null);
     setProfile(null);
   };
 
   const requestPasswordReset = async (email) => {
+    // Keep password-reset redirect behavior unchanged until the project's
+    // production redirect allow-list is configured.
     const redirectTo = window.location.origin + window.location.pathname + '#/login?reset=1';
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo,
+    });
+
     if (error) throw error;
   };
 
   const value = {
     currentUser,
     profile,
-    isAuthenticated: !!currentUser,
+    isAuthenticated: Boolean(currentUser),
     isAdmin: profile?.role === 'admin',
     login,
     signup,
