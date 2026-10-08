@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import supabase from '@/lib/supabaseClient.js';
 
 const AuthContext = createContext(null);
@@ -137,13 +137,13 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (!currentUser) {
       setProfile(null);
       return null;
     }
     return loadProfile(currentUser);
-  };
+  }, [currentUser]);
 
   const value = {
     currentUser,
