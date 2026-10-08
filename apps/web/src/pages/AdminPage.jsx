@@ -29,7 +29,7 @@ const blank = {
 };
 
 const AdminPage = () => {
-  const { currentUser, profile, isAdmin, refreshProfile, logout } = useAuth();
+  const { currentUser, profile, isAdmin, logout } = useAuth();
   const [chapters, setChapters] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -40,7 +40,6 @@ const AdminPage = () => {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('questions');
   const [error, setError] = useState('');
-  const [checkingAdmin, setCheckingAdmin] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -62,24 +61,6 @@ const AdminPage = () => {
     if (!a.error) setAttempts(a.data || []);
     setLoading(false);
   };
-
-  useEffect(() => {
-    let mounted = true;
-
-    const verifyAdmin = async () => {
-      if (!currentUser) {
-        if (mounted) setCheckingAdmin(false);
-        return;
-      }
-
-      setCheckingAdmin(true);
-      await refreshProfile();
-      if (mounted) setCheckingAdmin(false);
-    };
-
-    void verifyAdmin();
-    return () => { mounted = false; };
-  }, [currentUser, refreshProfile]);
 
   useEffect(() => {
     if (isAdmin) void load();
