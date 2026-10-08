@@ -55,14 +55,29 @@ const AdminPage = () => {
     setLoading(true);
     setError('');
     try {
-      const [courseRows, userRows, purchaseRows] = await Promise.all([
+      const results = await Promise.allSettled([
         pb.collection('courses').getFullList({ sort: 'createdAt', $autoCancel: false }),
         pb.collection('users').getFullList({ sort: '-created', $autoCancel: false }),
         pb.collection('purchases').getFullList({ sort: '-purchaseDate', expand: 'courseId', $autoCancel: false }),
       ]);
+
+      const [courseResult, userResult, purchaseResult] = results;
+      const courseRows = courseResult.status === 'fulfilled' ? courseResult.value : [];
+      const userRows = userResult.status === 'fulfilled' ? userResult.value : [];
+      const purchaseRows = purchaseResult.status === 'fulfilled' ? purchaseResult.value : [];
+
       setCourses(courseRows);
       setUsers(userRows);
       setPurchases(purchaseRows);
+
+      const failed = results
+        .map((result, index) => result.status === 'rejected' ? ['courses', 'users', 'purchases'][index] : null)
+        .filter(Boolean);
+
+      if (failed.length) {
+        setError(`Some admin data could not be loaded: ${failed.join(', ')}. Check the PocketBase collection rules.`);
+      }
+
       if (!selectedCourseId && courseRows[0]) {
         setSelectedCourseId(courseRows[0].id);
         setLessonForm((v) => ({ ...v, courseId: courseRows[0].id }));
