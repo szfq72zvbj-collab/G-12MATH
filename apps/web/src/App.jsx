@@ -1,5 +1,5 @@
 import React from 'react';
-import { Route, Routes, HashRouter as Router, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, HashRouter as Router, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import Header from './components/Header.jsx';
 import Footer from './components/Footer.jsx';
@@ -17,7 +17,6 @@ import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
 import PaymentFailurePage from './pages/PaymentFailurePage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import QuizPage from './pages/QuizPage.jsx';
-import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 
 const AppRoutes = () => {
