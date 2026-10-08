@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import pb from '@/lib/pocketbaseClient.js';
+import supabase from '@/lib/supabaseClient.js';
+import MathText from '@/components/MathText.jsx';
 import Header from '@/components/Header.jsx';
 import Footer from '@/components/Footer.jsx';
 import { Button } from '@/components/ui/button';
@@ -11,120 +12,71 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import {
-  ArrowLeft, BookOpen, CheckCircle2, ClipboardList, Edit3, GraduationCap,
-  Layers3, Loader2, Plus, RefreshCw, Save, ShieldCheck, Trash2, Users
-} from 'lucide-react';
+import { ArrowLeft, BarChart3, BookOpen, CheckCircle2, Edit3, Loader2, Plus, RefreshCw, Save, ShieldCheck, Trash2, Users } from 'lucide-react';
 
-const emptyCourse = {
-  title: '',
-  description: '',
-  instructor: '',
-  price: '0',
-  isPremium: false,
-};
-
-const emptyLesson = {
-  courseId: '',
-  title: '',
-  content: '',
-  videoUrl: '',
-  order: '1',
-  materials: '',
+const blank = {
+  id: null,
+  chapter_id: '',
+  prompt: '',
+  a: '',
+  b: '',
+  c: '',
+  d: '',
+  correct_index: '0',
+  explanation: '',
+  difficulty: 'medium',
+  published: true,
 };
 
 const AdminPage = () => {
-  const { currentUser, logout } = useAuth();
-  const [tab, setTab] = useState('overview');
-  const [courses, setCourses] = useState([]);
-  const [lessons, setLessons] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [purchases, setPurchases] = useState([]);
-  const [selectedCourseId, setSelectedCourseId] = useState('');
-  const [courseForm, setCourseForm] = useState(emptyCourse);
-  const [lessonForm, setLessonForm] = useState(emptyLesson);
-  const [editingCourseId, setEditingCourseId] = useState(null);
-  const [editingLessonId, setEditingLessonId] = useState(null);
+  const { currentUser, profile, isAdmin, logout } = useAuth();
+  const [chapters, setChapters] = useState([]);
+  const [questions, setQuestions] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [attempts, setAttempts] = useState([]);
+  const [activeChapter, setActiveChapter] = useState(null);
+  const [form, setForm] = useState(blank);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState('questions');
   const [error, setError] = useState('');
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.isAdmin === true;
-
-  const loadData = async () => {
+  const load = async () => {
     setLoading(true);
     setError('');
-    try {
-      const results = await Promise.allSettled([
-        pb.collection('courses').getFullList({ sort: 'createdAt', $autoCancel: false }),
-        pb.collection('users').getFullList({ sort: '-created', $autoCancel: false }),
-        pb.collection('purchases').getFullList({ sort: '-purchaseDate', expand: 'courseId', $autoCancel: false }),
-      ]);
-
-      const [courseResult, userResult, purchaseResult] = results;
-      const courseRows = courseResult.status === 'fulfilled' ? courseResult.value : [];
-      const userRows = userResult.status === 'fulfilled' ? userResult.value : [];
-      const purchaseRows = purchaseResult.status === 'fulfilled' ? purchaseResult.value : [];
-
-      setCourses(courseRows);
-      setUsers(userRows);
-      setPurchases(purchaseRows);
-
-      const failed = results
-        .map((result, index) => result.status === 'rejected' ? ['courses', 'users', 'purchases'][index] : null)
-        .filter(Boolean);
-
-      if (failed.length) {
-        setError(`Some admin data could not be loaded: ${failed.join(', ')}. Check the PocketBase collection rules.`);
-      }
-
-      if (!selectedCourseId && courseRows[0]) {
-        setSelectedCourseId(courseRows[0].id);
-        setLessonForm((v) => ({ ...v, courseId: courseRows[0].id }));
-      }
-    } catch (err) {
-      console.error('Admin load error:', err);
-      setError(err?.message || 'Unable to load admin data. Check your PocketBase collection rules.');
-      toast.error(err?.message || 'Unable to load admin data');
-    } finally {
-      setLoading(false);
+    const [c, q, p, a] = await Promise.all([
+      supabase.from('grade12_chapters').select('*').order('sort_order'),
+      supabase.from('grade12_questions').select('*').order('chapter_id').order('id'),
+      supabase.from('profiles').select('id,full_name,email,phone,role,created_at,last_seen').order('created_at', { ascending: false }),
+      supabase.from('grade12_attempts').select('id,user_id,chapter_id,score,total,percentage,created_at').order('created_at', { ascending: false }),
+    ]);
+    const errors = [c, q, p, a].filter((r) => r.error).map((r) => r.error.message);
+    if (errors.length) setError(errors.join(' | '));
+    if (!c.error) {
+      setChapters(c.data || []);
+      if (activeChapter == null && c.data?.[0]) setActiveChapter(c.data[0].id);
     }
-  };
-
-  const loadLessons = async (courseId) => {
-    if (!courseId) {
-      setLessons([]);
-      return;
-    }
-    try {
-      const rows = await pb.collection('lessons').getFullList({
-        filter: `courseId = "${courseId}"`,
-        sort: 'order',
-        $autoCancel: false,
-      });
-      setLessons(rows);
-    } catch (err) {
-      console.error('Lesson load error:', err);
-      setLessons([]);
-      toast.error(err?.message || 'Unable to load lessons');
-    }
+    if (!q.error) setQuestions(q.data || []);
+    if (!p.error) setProfiles(p.data || []);
+    if (!a.error) setAttempts(a.data || []);
+    setLoading(false);
   };
 
   useEffect(() => {
-    if (isAdmin) loadData();
+    if (isAdmin) load();
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (isAdmin && selectedCourseId) loadLessons(selectedCourseId);
-  }, [isAdmin, selectedCourseId]);
+  const chapterQuestions = useMemo(
+    () => questions.filter((q) => q.chapter_id === activeChapter),
+    [questions, activeChapter]
+  );
 
-  const stats = useMemo(() => ({
-    courses: courses.length,
-    lessons: lessons.length,
-    users: users.length,
-    purchases: purchases.length,
-    completed: purchases.filter((p) => p.status === 'completed' || p.paymentStatus === 'completed').length,
-  }), [courses, lessons, users, purchases]);
+  const stats = {
+    questions: questions.length,
+    published: questions.filter((q) => q.published).length,
+    students: profiles.filter((p) => p.role !== 'admin').length,
+    attempts: attempts.length,
+  };
 
   if (!currentUser) return <Navigate to="/login" replace />;
 
@@ -133,15 +85,13 @@ const AdminPage = () => {
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
         <main className="flex-1 flex items-center justify-center px-4 py-12">
-          <Card className="max-w-lg w-full text-center">
+          <Card className="w-full max-w-lg text-center">
             <CardHeader>
               <div className="mx-auto mb-3 h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center">
                 <ShieldCheck className="h-8 w-8 text-destructive" />
               </div>
-              <CardTitle>Admin access required</CardTitle>
-              <CardDescription>
-                This account does not have the <code>role = admin</code> permission in PocketBase.
-              </CardDescription>
+              <CardTitle>Administrator access required</CardTitle>
+              <CardDescription>Your account is signed in, but its profile role is not <code>admin</code>.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Link to="/dashboard"><Button className="w-full">Back to dashboard</Button></Link>
@@ -154,379 +104,232 @@ const AdminPage = () => {
     );
   }
 
-  const startNewCourse = () => {
-    setEditingCourseId(null);
-    setCourseForm(emptyCourse);
-  };
+  const startNew = () => setForm({ ...blank, chapter_id: String(activeChapter || '') });
 
-  const editCourse = (course) => {
-    setEditingCourseId(course.id);
-    setCourseForm({
-      title: course.title || '',
-      description: course.description || '',
-      instructor: course.instructor || '',
-      price: String(course.price ?? 0),
-      isPremium: !!course.isPremium,
+  const edit = (q) => {
+    setForm({
+      id: q.id,
+      chapter_id: String(q.chapter_id),
+      prompt: q.prompt || '',
+      a: q.options?.[0] || '',
+      b: q.options?.[1] || '',
+      c: q.options?.[2] || '',
+      d: q.options?.[3] || '',
+      correct_index: String(q.correct_index ?? 0),
+      explanation: q.explanation || '',
+      difficulty: q.difficulty || 'medium',
+      published: !!q.published,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const saveCourse = async (e) => {
+  const save = async (e) => {
     e.preventDefault();
-    if (!courseForm.title.trim()) return toast.error('Course title is required');
+    if (!form.chapter_id || !form.prompt.trim()) return toast.error('Choose a chapter and enter a question.');
+    const options = [form.a, form.b, form.c, form.d].map((x) => x.trim());
+    if (options.some((x) => !x)) return toast.error('All four options are required.');
+
     setSaving(true);
-    try {
-      const body = {
-        title: courseForm.title.trim(),
-        description: courseForm.description.trim(),
-        instructor: courseForm.instructor.trim(),
-        price: Number(courseForm.price) || 0,
-        isPremium: !!courseForm.isPremium,
-      };
-      const saved = editingCourseId
-        ? await pb.collection('courses').update(editingCourseId, body, { $autoCancel: false })
-        : await pb.collection('courses').create(body, { $autoCancel: false });
+    const payload = {
+      chapter_id: Number(form.chapter_id),
+      prompt: form.prompt.trim(),
+      options,
+      correct_index: Number(form.correct_index),
+      explanation: form.explanation.trim(),
+      difficulty: form.difficulty,
+      published: form.published,
+      created_by: currentUser.id,
+    };
 
-      setCourses((rows) => editingCourseId
-        ? rows.map((row) => row.id === saved.id ? saved : row)
-        : [...rows, saved]
-      );
-      setSelectedCourseId(saved.id);
-      setLessonForm((v) => ({ ...v, courseId: saved.id }));
-      setEditingCourseId(null);
-      setCourseForm(emptyCourse);
-      toast.success(editingCourseId ? 'Course updated' : 'Course created');
-    } catch (err) {
-      toast.error(err?.message || 'Unable to save course');
-    } finally {
-      setSaving(false);
-    }
+    const result = form.id
+      ? await supabase.from('grade12_questions').update(payload).eq('id', form.id).select().single()
+      : await supabase.from('grade12_questions').insert(payload).select().single();
+
+    setSaving(false);
+    if (result.error) return toast.error(result.error.message);
+
+    toast.success(form.id ? 'Question updated' : 'Question added');
+    const saved = result.data;
+    setQuestions((rows) => form.id ? rows.map((q) => q.id === saved.id ? saved : q) : [...rows, saved].sort((x, y) => Number(x.id) - Number(y.id)));
+    setActiveChapter(saved.chapter_id);
+    setForm({ ...blank, chapter_id: String(saved.chapter_id) });
   };
 
-  const deleteCourse = async (courseId) => {
-    if (!window.confirm('Delete this course? Related data may also be affected by your PocketBase rules.')) return;
-    try {
-      await pb.collection('courses').delete(courseId, { $autoCancel: false });
-      setCourses((rows) => rows.filter((row) => row.id !== courseId));
-      if (selectedCourseId === courseId) {
-        const next = courses.find((row) => row.id !== courseId);
-        setSelectedCourseId(next?.id || '');
-      }
-      toast.success('Course deleted');
-    } catch (err) {
-      toast.error(err?.message || 'Unable to delete course');
-    }
+  const remove = async () => {
+    if (!form.id || !window.confirm('Delete this question?')) return;
+    const result = await supabase.from('grade12_questions').delete().eq('id', form.id);
+    if (result.error) return toast.error(result.error.message);
+    toast.success('Question deleted');
+    setQuestions((rows) => rows.filter((q) => q.id !== form.id));
+    setForm({ ...blank, chapter_id: String(activeChapter || '') });
   };
 
-  const resetLesson = () => {
-    setEditingLessonId(null);
-    setLessonForm((v) => ({ ...emptyLesson, courseId: selectedCourseId || v.courseId }));
-  };
-
-  const editLesson = (lesson) => {
-    setEditingLessonId(lesson.id);
-    setLessonForm({
-      courseId: lesson.courseId || selectedCourseId || '',
-      title: lesson.title || '',
-      content: lesson.content || '',
-      videoUrl: lesson.videoUrl || '',
-      order: String(lesson.order ?? 1),
-      materials: lesson.materials || '',
-    });
-  };
-
-  const saveLesson = async (e) => {
-    e.preventDefault();
-    if (!lessonForm.courseId) return toast.error('Choose a course');
-    if (!lessonForm.title.trim()) return toast.error('Lesson title is required');
-    setSaving(true);
-    try {
-      const body = {
-        courseId: lessonForm.courseId,
-        title: lessonForm.title.trim(),
-        content: lessonForm.content,
-        videoUrl: lessonForm.videoUrl.trim(),
-        order: Number(lessonForm.order) || 1,
-        materials: lessonForm.materials,
-      };
-      const saved = editingLessonId
-        ? await pb.collection('lessons').update(editingLessonId, body, { $autoCancel: false })
-        : await pb.collection('lessons').create(body, { $autoCancel: false });
-
-      if (saved.courseId === selectedCourseId) {
-        setLessons((rows) => editingLessonId
-          ? rows.map((row) => row.id === saved.id ? saved : row)
-          : [...rows, saved].sort((a, b) => Number(a.order) - Number(b.order))
-        );
-      }
-      setEditingLessonId(null);
-      setLessonForm({ ...emptyLesson, courseId: selectedCourseId });
-      toast.success(editingLessonId ? 'Lesson updated' : 'Lesson created');
-    } catch (err) {
-      toast.error(err?.message || 'Unable to save lesson');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteLesson = async (lessonId) => {
-    if (!window.confirm('Delete this lesson?')) return;
-    try {
-      await pb.collection('lessons').delete(lessonId, { $autoCancel: false });
-      setLessons((rows) => rows.filter((row) => row.id !== lessonId));
-      toast.success('Lesson deleted');
-    } catch (err) {
-      toast.error(err?.message || 'Unable to delete lesson');
-    }
-  };
-
-  const toggleAdmin = async (user) => {
-    const nextRole = user.role === 'admin' ? 'student' : 'admin';
-    if (!window.confirm(`${nextRole === 'admin' ? 'Make' : 'Remove'} admin access for ${user.email || user.name || 'this user'}?`)) return;
-    try {
-      const updated = await pb.collection('users').update(user.id, { role: nextRole }, { $autoCancel: false });
-      setUsers((rows) => rows.map((row) => row.id === updated.id ? updated : row));
-      toast.success(nextRole === 'admin' ? 'Admin access granted' : 'Admin access removed');
-    } catch (err) {
-      toast.error(err?.message || 'Unable to update user role');
-    }
+  const toggleAdmin = async (person) => {
+    const role = person.role === 'admin' ? 'student' : 'admin';
+    if (!window.confirm(`${role === 'admin' ? 'Grant' : 'Remove'} admin access for ${person.email || person.full_name}?`)) return;
+    const result = await supabase.from('profiles').update({ role }).eq('id', person.id);
+    if (result.error) return toast.error(result.error.message);
+    toast.success(role === 'admin' ? 'Admin access granted' : 'Admin access removed');
+    setProfiles((rows) => rows.map((p) => p.id === person.id ? { ...p, role } : p));
   };
 
   return (
     <>
       <Helmet>
-        <title>Admin Dashboard - Grade 12 Math Academy</title>
-        <meta name="description" content="Manage Grade 12 mathematics courses, lessons, students, and payments." />
+        <title>G12 Math Admin</title>
+        <meta name="description" content="Grade 12 Mathematics question and student administration." />
       </Helmet>
-
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
         <main className="flex-1 py-6 sm:py-10 px-4 sm:px-6 lg:px-8">
           <div className="container mx-auto max-w-7xl space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <Link to="/dashboard" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary mb-2">
                   <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
                 </Link>
-                <h1 className="text-3xl sm:text-4xl font-bold">Admin Dashboard</h1>
-                <p className="text-muted-foreground mt-1">Manage Grade 12 courses, lessons, students, and payments.</p>
+                <h1 className="text-3xl sm:text-4xl font-black">Grade 12 Admin</h1>
+                <p className="text-muted-foreground mt-1">Create and manage your own Grade 12 mathematics questions.</p>
               </div>
-              <Button variant="outline" onClick={loadData} disabled={loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
+              <Button variant="outline" onClick={load} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </Button>
             </div>
 
-            {error && (
-              <Card className="border-destructive/40 bg-destructive/5">
-                <CardContent className="pt-6 text-sm text-destructive">{error}</CardContent>
-              </Card>
-            )}
+            {error && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="pt-6 text-sm text-destructive">{error}</CardContent></Card>}
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                ['Courses', stats.courses, BookOpen],
-                ['Lessons', stats.lessons, Layers3],
-                ['Students', stats.users, Users],
-                ['Purchases', stats.purchases, ClipboardList],
-                ['Completed', stats.completed, CheckCircle2],
+                ['Questions', stats.questions, BookOpen],
+                ['Published', stats.published, CheckCircle2],
+                ['Students', stats.students, Users],
+                ['Attempts', stats.attempts, BarChart3],
               ].map(([label, value, Icon]) => (
-                <Card key={label}>
-                  <CardContent className="p-4">
-                    <Icon className="h-5 w-5 text-primary mb-2" />
-                    <div className="text-2xl font-bold">{loading ? '—' : value}</div>
-                    <div className="text-xs text-muted-foreground">{label}</div>
-                  </CardContent>
-                </Card>
+                <Card key={label}><CardContent className="p-4"><Icon className="h-5 w-5 text-primary mb-2" /><div className="text-2xl font-black">{loading ? '—' : value}</div><div className="text-xs text-muted-foreground">{label}</div></CardContent></Card>
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-2 border-b pb-2">
-              {[
-                ['overview', 'Overview'],
-                ['courses', 'Courses'],
-                ['lessons', 'Lessons'],
-                ['users', 'Students'],
-                ['purchases', 'Payments'],
-              ].map(([value, label]) => (
-                <Button key={value} variant={tab === value ? 'default' : 'ghost'} onClick={() => setTab(value)}>
-                  {label}
-                </Button>
-              ))}
+            <div className="flex gap-2 border-b overflow-x-auto">
+              <Button variant={tab === 'questions' ? 'default' : 'ghost'} onClick={() => setTab('questions')}>Question Editor</Button>
+              <Button variant={tab === 'students' ? 'default' : 'ghost'} onClick={() => setTab('students')}>Students</Button>
+              <Button variant={tab === 'attempts' ? 'default' : 'ghost'} onClick={() => setTab('attempts')}>Quiz Attempts</Button>
             </div>
 
-            {tab === 'overview' && (
-              <div className="grid lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-primary" /> Quick actions</CardTitle>
-                    <CardDescription>Jump directly to common management tasks.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid sm:grid-cols-2 gap-3">
-                    <Button onClick={() => { setTab('courses'); startNewCourse(); }}><Plus className="h-4 w-4 mr-2" /> New course</Button>
-                    <Button variant="outline" onClick={() => setTab('lessons')}><Plus className="h-4 w-4 mr-2" /> New lesson</Button>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Admin account</CardTitle>
-                    <CardDescription>{currentUser.email}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm text-muted-foreground">
-                    <p><strong className="text-foreground">Role:</strong> {currentUser.role || 'not set'}</p>
-                    <p>Admin controls are enforced by PocketBase collection API rules. The frontend only provides the management interface.</p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {tab === 'courses' && (
-              <div className="grid lg:grid-cols-[360px_1fr] gap-6">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between gap-3">
-                      <div><CardTitle>{editingCourseId ? 'Edit course' : 'New course'}</CardTitle><CardDescription>Create or update course information.</CardDescription></div>
-                      {editingCourseId && <Button size="sm" variant="ghost" onClick={startNewCourse}>New</Button>}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={saveCourse} className="space-y-4">
-                      <div><Label>Title</Label><Input value={courseForm.title} onChange={(e) => setCourseForm({ ...courseForm, title: e.target.value })} placeholder="Complex Numbers" /></div>
-                      <div><Label>Description</Label><Textarea value={courseForm.description} onChange={(e) => setCourseForm({ ...courseForm, description: e.target.value })} rows={4} /></div>
-                      <div><Label>Instructor</Label><Input value={courseForm.instructor} onChange={(e) => setCourseForm({ ...courseForm, instructor: e.target.value })} /></div>
-                      <div><Label>Price (MMK)</Label><Input type="number" min="0" value={courseForm.price} onChange={(e) => setCourseForm({ ...courseForm, price: e.target.value })} /></div>
-                      <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={courseForm.isPremium} onChange={(e) => setCourseForm({ ...courseForm, isPremium: e.target.checked })} /> Premium course</label>
-                      <Button type="submit" className="w-full" disabled={saving}>
-                        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                        {editingCourseId ? 'Save changes' : 'Create course'}
-                      </Button>
-                    </form>
+            {tab === 'questions' && (
+              <div className="grid lg:grid-cols-[280px_1fr] gap-6">
+                <Card className="h-fit">
+                  <CardHeader><CardTitle>Chapters</CardTitle><CardDescription>Choose where to add questions.</CardDescription></CardHeader>
+                  <CardContent className="space-y-2">
+                    {chapters.map((chapter) => {
+                      const count = questions.filter((q) => q.chapter_id === chapter.id).length;
+                      return (
+                        <button key={chapter.id} onClick={() => { setActiveChapter(chapter.id); setForm({ ...blank, chapter_id: String(chapter.id) }); }}
+                          className={`w-full text-left rounded-xl border p-3 transition ${activeChapter === chapter.id ? 'border-primary bg-primary/5' : 'hover:border-primary/40'}`}>
+                          <div className="font-bold">Chapter {chapter.id}</div>
+                          <div className="text-sm text-muted-foreground truncate">{chapter.title}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{count} question{count === 1 ? '' : 's'}</div>
+                        </button>
+                      );
+                    })}
                   </CardContent>
                 </Card>
 
-                <div className="space-y-3">
-                  {courses.map((course) => (
-                    <Card key={course.id} className={selectedCourseId === course.id ? 'border-primary' : ''}>
-                      <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-semibold">{course.title}</h3>
-                            {course.isPremium && <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent">Premium</span>}
-                          </div>
-                          <p className="text-sm text-muted-foreground line-clamp-2">{course.description}</p>
-                          <p className="text-xs text-muted-foreground mt-2">{Number(course.price || 0).toLocaleString()} MMK · {course.instructor || 'No instructor'}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => { setSelectedCourseId(course.id); setLessonForm((v) => ({ ...v, courseId: course.id })); }}><Layers3 className="h-4 w-4 mr-1" /> Lessons</Button>
-                          <Button size="sm" variant="outline" onClick={() => editCourse(course)}><Edit3 className="h-4 w-4 mr-1" /> Edit</Button>
-                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteCourse(course.id)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {!courses.length && !loading && <Card><CardContent className="p-8 text-center text-muted-foreground">No courses found in PocketBase.</CardContent></Card>}
-                </div>
-              </div>
-            )}
-
-            {tab === 'lessons' && (
-              <div className="grid lg:grid-cols-[360px_1fr] gap-6">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between gap-3">
-                      <div><CardTitle>{editingLessonId ? 'Edit lesson' : 'New lesson'}</CardTitle><CardDescription>Lesson notes, video, and ordering.</CardDescription></div>
-                      {editingLessonId && <Button size="sm" variant="ghost" onClick={resetLesson}>New</Button>}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={saveLesson} className="space-y-4">
-                      <div>
-                        <Label>Course</Label>
-                        <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={lessonForm.courseId} onChange={(e) => { setSelectedCourseId(e.target.value); setLessonForm({ ...lessonForm, courseId: e.target.value }); }}>
-                          <option value="">Select course</option>
-                          {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-                        </select>
+                <div className="space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between gap-3">
+                        <div><CardTitle>{form.id ? 'Edit question' : 'Add question'}</CardTitle><CardDescription>Use LaTeX such as <code>$x^2$</code>, <code>$\\sqrt{x}$</code>, or <code>\\(x^2+1\\)</code>.</CardDescription></div>
+                        <Button variant="outline" onClick={startNew}><Plus className="h-4 w-4 mr-1" /> New</Button>
                       </div>
-                      <div><Label>Title</Label><Input value={lessonForm.title} onChange={(e) => setLessonForm({ ...lessonForm, title: e.target.value })} placeholder="Lesson 1: Introduction" /></div>
-                      <div><Label>Order</Label><Input type="number" min="1" value={lessonForm.order} onChange={(e) => setLessonForm({ ...lessonForm, order: e.target.value })} /></div>
-                      <div><Label>Video URL</Label><Input value={lessonForm.videoUrl} onChange={(e) => setLessonForm({ ...lessonForm, videoUrl: e.target.value })} placeholder="https://..." /></div>
-                      <div><Label>Notes / content</Label><Textarea value={lessonForm.content} onChange={(e) => setLessonForm({ ...lessonForm, content: e.target.value })} rows={8} placeholder="Write the lesson notes here..." /></div>
-                      <div><Label>Materials</Label><Textarea value={lessonForm.materials} onChange={(e) => setLessonForm({ ...lessonForm, materials: e.target.value })} rows={3} /></div>
-                      <Button type="submit" className="w-full" disabled={saving}><Save className="h-4 w-4 mr-2" />{editingLessonId ? 'Save lesson' : 'Create lesson'}</Button>
-                    </form>
-                  </CardContent>
-                </Card>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={save} className="space-y-4">
+                        <div>
+                          <Label>Chapter</Label>
+                          <select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={form.chapter_id} onChange={(e) => { setActiveChapter(Number(e.target.value)); setForm({ ...form, chapter_id: e.target.value }); }}>
+                            <option value="">Select chapter</option>
+                            {chapters.map((c) => <option key={c.id} value={c.id}>Chapter {c.id} · {c.title}</option>)}
+                          </select>
+                        </div>
+                        <div><Label>Question</Label><Textarea className="mt-1 min-h-28" value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} placeholder="If z = 3 + 4i, what is |z|?" /></div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          {['a','b','c','d'].map((key, index) => <div key={key}><Label>Option {String.fromCharCode(65 + index)}</Label><Input className="mt-1" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} /></div>)}
+                        </div>
+                        <div className="grid sm:grid-cols-3 gap-3">
+                          <div><Label>Correct answer</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={form.correct_index} onChange={(e) => setForm({ ...form, correct_index: e.target.value })}>{['A','B','C','D'].map((x, i) => <option key={x} value={i}>Option {x}</option>)}</select></div>
+                          <div><Label>Difficulty</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></div>
+                          <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={form.published} onChange={(e) => setForm({ ...form, published: e.target.checked })} /> Published</label>
+                        </div>
+                        <div><Label>Explanation</Label><Textarea className="mt-1 min-h-24" value={form.explanation} onChange={(e) => setForm({ ...form, explanation: e.target.value })} placeholder="Explain the solution step by step." /></div>
 
-                <div>
-                  <div className="mb-3">
-                    <Label>Showing lessons for</Label>
-                    <select className="ml-2 h-9 rounded-md border bg-background px-3 text-sm" value={selectedCourseId} onChange={(e) => { setSelectedCourseId(e.target.value); setLessonForm((v) => ({ ...v, courseId: e.target.value })); }}>
-                      <option value="">Select course</option>
-                      {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-3">
-                    {lessons.map((lesson) => (
-                      <Card key={lesson.id}>
-                        <CardContent className="p-4">
-                          <div className="flex justify-between gap-4">
-                            <div>
-                              <div className="flex items-center gap-2"><span className="text-xs font-bold text-primary">#{lesson.order}</span><h3 className="font-semibold">{lesson.title}</h3></div>
-                              <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap line-clamp-4">{lesson.content}</p>
-                              {lesson.videoUrl && <p className="text-xs text-primary mt-2 break-all">{lesson.videoUrl}</p>}
-                            </div>
-                            <div className="flex gap-1 shrink-0">
-                              <Button size="icon" variant="ghost" onClick={() => editLesson(lesson)}><Edit3 className="h-4 w-4" /></Button>
-                              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => deleteLesson(lesson.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
+                        <div className="rounded-2xl border bg-muted/20 p-5">
+                          <div className="text-sm font-bold mb-3">Preview</div>
+                          <div className="text-lg font-semibold"><MathText>{form.prompt || 'Your question will appear here.'}</MathText></div>
+                          <div className="grid sm:grid-cols-2 gap-2 mt-4">
+                            {[form.a,form.b,form.c,form.d].map((value, i) => <div key={i} className="rounded-lg border bg-background p-3"><span className="font-bold mr-2">{String.fromCharCode(65+i)}.</span><MathText>{value || 'Option'}</MathText></div>)}
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                    {!lessons.length && <Card><CardContent className="p-8 text-center text-muted-foreground">No lessons for this course yet.</CardContent></Card>}
-                  </div>
+                          {form.explanation && <div className="mt-4 pt-4 border-t text-sm text-muted-foreground"><MathText>{form.explanation}</MathText></div>}
+                        </div>
+
+                        <div className="flex gap-3">
+                          <Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}{form.id ? 'Save changes' : 'Save question'}</Button>
+                          {form.id && <Button type="button" variant="destructive" onClick={remove}><Trash2 className="h-4 w-4 mr-2" /> Delete</Button>}
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader><CardTitle>Questions in Chapter {activeChapter}</CardTitle><CardDescription>{chapters.find((c) => c.id === activeChapter)?.title || ''}</CardDescription></CardHeader>
+                    <CardContent className="space-y-2">
+                      {chapterQuestions.map((q) => (
+                        <button key={q.id} onClick={() => edit(q)} className="w-full text-left rounded-xl border p-4 hover:border-primary/50">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-bold">Question {q.id}</div>
+                            <span className="text-xs text-muted-foreground">{q.difficulty} · {q.published ? 'Published' : 'Draft'}</span>
+                          </div>
+                          <div className="mt-2 text-sm text-muted-foreground line-clamp-2"><MathText>{q.prompt}</MathText></div>
+                        </button>
+                      ))}
+                      {!chapterQuestions.length && <div className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">No questions in this chapter yet. Create the first one above.</div>}
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             )}
 
-            {tab === 'users' && (
+            {tab === 'students' && (
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Student accounts</CardTitle><CardDescription>View accounts and manage admin permissions.</CardDescription></CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b text-left"><th className="p-3">Name</th><th className="p-3">Email</th><th className="p-3">Phone</th><th className="p-3">Role</th><th className="p-3">Action</th></tr></thead>
-                      <tbody>
-                        {users.map((user) => (
-                          <tr key={user.id} className="border-b">
-                            <td className="p-3 font-medium">{user.name || '—'}</td>
-                            <td className="p-3">{user.email || '—'}</td>
-                            <td className="p-3">{user.phone || '—'}</td>
-                            <td className="p-3"><span className="px-2 py-1 rounded-full text-xs bg-muted">{user.role || 'student'}</span></td>
-                            <td className="p-3">{user.id !== currentUser.id && <Button size="sm" variant="outline" onClick={() => toggleAdmin(user)}>{user.role === 'admin' ? 'Remove admin' : 'Make admin'}</Button>}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!users.length && <p className="text-center text-muted-foreground py-6">No users available.</p>}
+                <CardHeader><CardTitle>Student accounts</CardTitle><CardDescription>Manage profiles and administrator permissions.</CardDescription></CardHeader>
+                <CardContent className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-left"><th className="p-3">Name</th><th className="p-3">Email</th><th className="p-3">Phone</th><th className="p-3">Role</th><th className="p-3">Action</th></tr></thead>
+                    <tbody>
+                      {profiles.map((person) => (
+                        <tr key={person.id} className="border-b">
+                          <td className="p-3 font-medium">{person.full_name || '—'}</td>
+                          <td className="p-3">{person.email || '—'}</td>
+                          <td className="p-3">{person.phone || '—'}</td>
+                          <td className="p-3"><span className="rounded-full bg-muted px-2 py-1 text-xs">{person.role}</span></td>
+                          <td className="p-3">{person.id !== currentUser.id && <Button size="sm" variant="outline" onClick={() => toggleAdmin(person)}>{person.role === 'admin' ? 'Remove admin' : 'Make admin'}</Button>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </CardContent>
               </Card>
             )}
 
-            {tab === 'purchases' && (
+            {tab === 'attempts' && (
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Payment history</CardTitle><CardDescription>Review recent course purchase records.</CardDescription></CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {purchases.map((purchase) => (
-                      <div key={purchase.id} className="rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                        <div><div className="font-medium">{purchase.expand?.courseId?.title || purchase.courseId || 'Unknown course'}</div><div className="text-sm text-muted-foreground">{purchase.phone || 'No phone'} · {purchase.transactionId || purchase.id}</div></div>
-                        <div className="text-right"><div className="font-semibold">{Number(purchase.amount || 0).toLocaleString()} MMK</div><div className="text-xs text-muted-foreground">{purchase.status || purchase.paymentStatus || 'unknown'}</div></div>
-                      </div>
-                    ))}
-                    {!purchases.length && <p className="text-center text-muted-foreground py-6">No purchases yet.</p>}
-                  </div>
+                <CardHeader><CardTitle>Quiz attempts</CardTitle><CardDescription>Review student results.</CardDescription></CardHeader>
+                <CardContent className="space-y-2">
+                  {attempts.map((a) => {
+                    const person = profiles.find((p) => p.id === a.user_id);
+                    const chapter = chapters.find((c) => c.id === a.chapter_id);
+                    return <div key={a.id} className="rounded-xl border p-4 flex flex-col sm:flex-row sm:justify-between gap-2"><div><div className="font-medium">{person?.full_name || person?.email || 'Student'}</div><div className="text-sm text-muted-foreground">Chapter {a.chapter_id} · {chapter?.title || 'Unknown'}</div></div><div className="text-right font-bold">{a.score}/{a.total} · {Number(a.percentage).toFixed(1)}%</div></div>;
+                  })}
+                  {!attempts.length && <div className="text-center text-muted-foreground py-8">No quiz attempts yet.</div>}
                 </CardContent>
               </Card>
             )}
