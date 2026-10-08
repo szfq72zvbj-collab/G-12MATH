@@ -11,7 +11,7 @@ const Header = () => {
   const { currentUser, isAuthenticated, isAdmin, logout } = useAuth();
 
   const navLinks = [
-    { name: 'Home', path: '/' },
+    { name: 'Home', path: '/home' },
     { name: 'Chapters', path: '/#chapters' },
     { name: 'Premium', path: '/#premium' },
     { name: 'Contact', path: '/contact' },
