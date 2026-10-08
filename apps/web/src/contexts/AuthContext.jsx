@@ -1,65 +1,86 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import pb from '@/lib/pocketbaseClient.js';
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
 
+const withTimeout = (promise, ms = 15000) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error('The request took too long. Please check your connection and try again.')), ms)),
+]);
+
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(pb.authStore.record || null);
+  const [initialLoading, setInitialLoading] = useState(false);
 
   useEffect(() => {
-    if (pb.authStore.isValid) {
-      setCurrentUser(pb.authStore.model);
-    }
-    setInitialLoading(false);
+    const unsubscribe = pb.authStore.onChange((_token, record) => {
+      setCurrentUser(record || null);
+    }, true);
+
+    return unsubscribe;
   }, []);
 
   const login = async (email, password) => {
-    const authData = await pb.collection('users').authWithPassword(email, password, { $autoCancel: false });
+    const authData = await withTimeout(
+      pb.collection('users').authWithPassword(email.trim(), password, { $autoCancel: false })
+    );
     setCurrentUser(authData.record);
     return authData;
   };
 
   const signup = async (name, email, phone, password) => {
-    const userData = {
-      name,
-      email,
-      phone,
-      password,
-      passwordConfirm: password,
-    };
-    const record = await pb.collection('users').create(userData, { $autoCancel: false });
-    
-    // Auto-login after signup
-    const authData = await pb.collection('users').authWithPassword(email, password, { $autoCancel: false });
-    setCurrentUser(authData.record);
-    return authData;
+    const record = await withTimeout(
+      pb.collection('users').create({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password,
+        passwordConfirm: password,
+      }, { $autoCancel: false })
+    );
+
+    try {
+      const authData = await withTimeout(
+        pb.collection('users').authWithPassword(email.trim(), password, { $autoCancel: false })
+      );
+      setCurrentUser(authData.record);
+      return { ...authData, requiresVerification: false };
+    } catch (authError) {
+      // PocketBase can require email verification before password login.
+      if (/verified|verification|confirm/i.test(authError?.message || '')) {
+        return { record, requiresVerification: true };
+      }
+      throw authError;
+    }
   };
 
-  const logout = () => {
+  const logout = async () => {
     pb.authStore.clear();
     setCurrentUser(null);
   };
 
   const requestPasswordReset = async (email) => {
-    await pb.collection('users').requestPasswordReset(email, { $autoCancel: false });
+    await withTimeout(
+      pb.collection('users').requestPasswordReset(email.trim(), { $autoCancel: false })
+    );
   };
 
   const confirmPasswordReset = async (token, password) => {
-    await pb.collection('users').confirmPasswordReset(token, password, password, { $autoCancel: false });
+    await withTimeout(
+      pb.collection('users').confirmPasswordReset(token, password, password, { $autoCancel: false })
+    );
   };
 
   const value = {
     currentUser,
-    isAuthenticated: pb.authStore.isValid,
+    isAuthenticated: !!pb.authStore.isValid,
+    isAdmin: currentUser?.role === 'admin' || currentUser?.isAdmin === true,
     login,
     signup,
     logout,
@@ -67,17 +88,6 @@ export const AuthProvider = ({ children }) => {
     confirmPasswordReset,
     initialLoading,
   };
-
-  if (initialLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
