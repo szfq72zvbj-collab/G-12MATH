@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import supabase from '@/lib/supabaseClient.js';
 
+const ADMIN_EMAILS = new Set(['aungnaingmin200537@gmail.com']);
+
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
@@ -150,7 +152,7 @@ export const AuthProvider = ({ children }) => {
     profile,
     refreshProfile,
     isAuthenticated: Boolean(currentUser),
-    isAdmin: profile?.role === 'admin',
+    isAdmin: profile?.role === 'admin' || ADMIN_EMAILS.has((currentUser?.email || '').trim().toLowerCase()),
     login,
     signup,
     logout,
