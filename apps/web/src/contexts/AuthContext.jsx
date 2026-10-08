@@ -1,93 +1,135 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import pb from '@/lib/pocketbaseClient.js';
+import supabase from '@/lib/supabaseClient.js';
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
+  const value = useContext(AuthContext);
+  if (!value) throw new Error('useAuth must be used within AuthProvider');
+  return value;
 };
 
-const withTimeout = (promise, ms = 15000) => Promise.race([
-  promise,
-  new Promise((_, reject) => setTimeout(() => reject(new Error('The request took too long. Please check your connection and try again.')), ms)),
-]);
-
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(pb.authStore.record || null);
-  const [initialLoading, setInitialLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  const loadProfile = async (user) => {
+    if (!user) {
+      setProfile(null);
+      return null;
+    }
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, role, last_seen')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (data) {
+      setProfile(data);
+      await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
+      return data;
+    }
+    return null;
+  };
 
   useEffect(() => {
-    const unsubscribe = pb.authStore.onChange((_token, record) => {
-      setCurrentUser(record || null);
-    }, true);
+    let mounted = true;
 
-    return unsubscribe;
+    const initialize = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      const user = data.session?.user || null;
+      setCurrentUser(user);
+      if (user) await loadProfile(user);
+      if (mounted) setInitialLoading(false);
+    };
+
+    initialize();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user || null;
+      setCurrentUser(user);
+      if (user) await loadProfile(user);
+      else setProfile(null);
+      setInitialLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email, password) => {
-    const authData = await withTimeout(
-      pb.collection('users').authWithPassword(email.trim(), password, { $autoCancel: false })
-    );
-    setCurrentUser(authData.record);
-    return authData;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) throw error;
+    setCurrentUser(data.user);
+    await loadProfile(data.user);
+    return data;
   };
 
   const signup = async (name, email, phone, password) => {
-    const record = await withTimeout(
-      pb.collection('users').create({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        password,
-        passwordConfirm: password,
-      }, { $autoCancel: false })
-    );
+    const redirectTo = window.location.origin + window.location.pathname + '#/login';
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        emailRedirectTo: redirectTo,
+        data: {
+          full_name: name.trim(),
+          phone: phone.trim(),
+        },
+      },
+    });
 
-    try {
-      const authData = await withTimeout(
-        pb.collection('users').authWithPassword(email.trim(), password, { $autoCancel: false })
-      );
-      setCurrentUser(authData.record);
-      return { ...authData, requiresVerification: false };
-    } catch (authError) {
-      // PocketBase can require email verification before password login.
-      if (/verified|verification|confirm/i.test(authError?.message || '')) {
-        return { record, requiresVerification: true };
-      }
-      throw authError;
+    if (error) throw error;
+
+    if (data.user && data.session) {
+      await loadProfile(data.user);
     }
+
+    return {
+      ...data,
+      requiresVerification: !!data.user && !data.session,
+    };
   };
 
   const logout = async () => {
-    pb.authStore.clear();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setCurrentUser(null);
+    setProfile(null);
   };
 
   const requestPasswordReset = async (email) => {
-    await withTimeout(
-      pb.collection('users').requestPasswordReset(email.trim(), { $autoCancel: false })
-    );
-  };
-
-  const confirmPasswordReset = async (token, password) => {
-    await withTimeout(
-      pb.collection('users').confirmPasswordReset(token, password, password, { $autoCancel: false })
-    );
+    const redirectTo = window.location.origin + window.location.pathname + '#/login?reset=1';
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+    if (error) throw error;
   };
 
   const value = {
     currentUser,
-    isAuthenticated: !!pb.authStore.isValid,
-    isAdmin: currentUser?.role === 'admin' || currentUser?.isAdmin === true,
+    profile,
+    isAuthenticated: !!currentUser,
+    isAdmin: profile?.role === 'admin',
     login,
     signup,
     logout,
     requestPasswordReset,
-    confirmPasswordReset,
     initialLoading,
   };
+
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center text-muted-foreground">Loading Grade 12 Math…</div>
+      </div>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
