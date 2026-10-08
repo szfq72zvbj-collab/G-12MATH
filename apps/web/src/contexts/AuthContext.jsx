@@ -47,12 +47,15 @@ export const AuthProvider = ({ children }) => {
 
     initialize();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user || null;
       setCurrentUser(user);
-      if (user) await loadProfile(user);
-      else setProfile(null);
       setInitialLoading(false);
+      if (user) {
+        void loadProfile(user);
+      } else {
+        setProfile(null);
+      }
     });
 
     return () => {
