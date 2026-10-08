@@ -3,10 +3,14 @@ name: Deploy G-12MATH to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'index.html'
+      - '.nojekyll'
+      - 'assets/**'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -39,6 +43,21 @@ jobs:
           VITE_APP_NAME: Grade 12 Math Academy
           VITE_ENVIRONMENT: production
         run: npm run build
+
+      - name: Sync built app to repository root
+        run: |
+          rm -rf ./assets
+          cp -R ./dist/apps/web/. ./
+          touch .nojekyll
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A index.html assets .nojekyll
+          if git diff --cached --quiet; then
+            echo "No generated site changes to commit."
+          else
+            git commit -m "[skip ci] Sync G-12MATH web build"
+            git push
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
