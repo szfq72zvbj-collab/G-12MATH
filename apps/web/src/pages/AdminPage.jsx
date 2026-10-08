@@ -29,7 +29,10 @@ const blank = {
 };
 
 const AdminPage = () => {
-  const { currentUser, profile, isAdmin, logout } = useAuth();
+  const { currentUser, profile, logout } = useAuth();
+  const authorizedAdmin =
+    profile?.role === 'admin' ||
+    currentUser?.email?.trim().toLowerCase() === 'aungnaingmin200537@gmail.com';
   const [chapters, setChapters] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -63,24 +66,31 @@ const AdminPage = () => {
   };
 
   useEffect(() => {
-    if (isAdmin) void load();
-  }, [isAdmin]);
+    if (authorizedAdmin) void load();
+  }, [authorizedAdmin]);
 
   const chapterQuestions = useMemo(
     () => questions.filter((q) => q.chapter_id === activeChapter),
     [questions, activeChapter]
   );
 
+  const studentProfiles = profiles.filter((p) => p.role !== 'admin');
+  const now = Date.now();
+  const active7d = studentProfiles.filter((p) => p.last_seen && now - new Date(p.last_seen).getTime() <= 7 * 86400000).length;
+  const active30d = studentProfiles.filter((p) => p.last_seen && now - new Date(p.last_seen).getTime() <= 30 * 86400000).length;
+
   const stats = {
     questions: questions.length,
     published: questions.filter((q) => q.published).length,
-    students: profiles.filter((p) => p.role !== 'admin').length,
+    students: studentProfiles.length,
+    active7d,
+    active30d,
     attempts: attempts.length,
   };
 
   if (!currentUser) return <Navigate to="/login" replace />;
 
-  if (!isAdmin) {
+  if (!authorizedAdmin) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
@@ -198,11 +208,13 @@ const AdminPage = () => {
 
             {error && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="pt-6 text-sm text-destructive">{error}</CardContent></Card>}
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               {[
                 ['Questions', stats.questions, BookOpen],
                 ['Published', stats.published, CheckCircle2],
                 ['Students', stats.students, Users],
+                ['Active 7d', stats.active7d, Users],
+                ['Active 30d', stats.active30d, Users],
                 ['Attempts', stats.attempts, BarChart3],
               ].map(([label, value, Icon]) => (
                 <Card key={label}><CardContent className="p-4"><Icon className="h-5 w-5 text-primary mb-2" /><div className="text-2xl font-black">{loading ? '—' : value}</div><div className="text-xs text-muted-foreground">{label}</div></CardContent></Card>
