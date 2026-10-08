@@ -64,6 +64,7 @@ export const AuthProvider = ({ children }) => {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user || null;
       setCurrentUser(user);
+      setProfile(null);
       setInitialLoading(false);
 
       if (user) {
