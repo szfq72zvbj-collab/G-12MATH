@@ -30,9 +30,10 @@ const blank = {
 
 const AdminPage = () => {
   const { currentUser, profile, logout } = useAuth();
+  const signedInEmail = (profile?.email || currentUser?.email || '').trim().toLowerCase();
   const authorizedAdmin =
     profile?.role === 'admin' ||
-    currentUser?.email?.trim().toLowerCase() === 'aungnaingmin200537@gmail.com';
+    signedInEmail === 'aungnaingmin200537@gmail.com';
   const [chapters, setChapters] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -101,11 +102,14 @@ const AdminPage = () => {
                 <ShieldCheck className="h-8 w-8 text-destructive" />
               </div>
               <CardTitle>Administrator access required</CardTitle>
-              <CardDescription>Your account is signed in, but its profile role is not <code>admin</code>.</CardDescription>
+              <CardDescription>
+                Your current account is <code>{signedInEmail || 'unknown'}</code>.
+                Administrator access is enabled only for the configured admin account.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Link to="/dashboard"><Button className="w-full">Back to dashboard</Button></Link>
-              <Button variant="outline" className="w-full" onClick={logout}>Sign out</Button>
+              <Button variant="outline" className="w-full" onClick={logout}>Sign out and switch account</Button>
             </CardContent>
           </Card>
         </main>
