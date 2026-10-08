@@ -17,11 +17,14 @@ import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
 import PaymentFailurePage from './pages/PaymentFailurePage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import QuizPage from './pages/QuizPage.jsx';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext.jsx';
 
 const AppRoutes = () => {
   const { pathname } = useLocation();
+  const { isAuthenticated } = useAuth();
   const usePublicShell =
-    pathname === '/' ||
+    pathname === '/home' ||
     pathname === '/contact' ||
     pathname.startsWith('/chapter/');
 
@@ -30,8 +33,9 @@ const AppRoutes = () => {
       {usePublicShell && <Header />}
       <main className="flex-grow">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/chapter/:id" element={<ChapterDetailPage />} />
+          <Route path="/" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/chapter/:id" element={<ProtectedRoute><ChapterDetailPage /></ProtectedRoute>} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
