@@ -14,7 +14,7 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  const loadProfile = async (user) => {
+  const loadProfile = useCallback(async (user) => {
     if (!user) {
       setProfile(null);
       return null;
@@ -36,7 +36,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     return null;
-  };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
