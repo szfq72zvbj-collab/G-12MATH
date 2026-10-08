@@ -143,7 +143,7 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
     return loadProfile(currentUser);
-  }, [currentUser]);
+  }, [currentUser, loadProfile]);
 
   const value = {
     currentUser,
