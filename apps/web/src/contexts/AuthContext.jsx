@@ -103,6 +103,7 @@ export const AuthProvider = ({ children }) => {
         data: {
           full_name: name.trim(),
           phone: phone.trim(),
+          country: 'Myanmar',
         },
       },
     });
