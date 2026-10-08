@@ -65,6 +65,7 @@ const SignupPage = () => {
     <>
       <Helmet><title>Sign Up - Grade 12 Math Academy</title><meta name="description" content="Create an account to start learning mathematics." /></Helmet>
       <div className="min-h-screen flex flex-col bg-background">
+        <Header />
         <main className="flex-grow flex items-center justify-center py-8 sm:py-12 px-4 sm:px-6 lg:px-8">
           <Card className="w-full max-w-md shadow-lg border-border/50">
             <CardHeader className="text-center">
@@ -89,6 +90,7 @@ const SignupPage = () => {
             </form>
           </Card>
         </main>
+        <Footer />
       </div>
     </>
   );
