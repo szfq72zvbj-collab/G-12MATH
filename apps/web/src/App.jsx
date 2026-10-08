@@ -16,6 +16,7 @@ import PaymentPage from './pages/PaymentPage.jsx';
 import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
 import PaymentFailurePage from './pages/PaymentFailurePage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import QuizPage from './pages/QuizPage.jsx';
 
 const AppRoutes = () => {
   const { pathname } = useLocation();
@@ -41,6 +42,7 @@ const AppRoutes = () => {
           <Route path="/payment-success" element={<PaymentSuccessPage />} />
           <Route path="/payment-failure" element={<PaymentFailurePage />} />
           <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/quiz/:chapterId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
           <Route
             path="*"
             element={
